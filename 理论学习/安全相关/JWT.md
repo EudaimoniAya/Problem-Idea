@@ -1,4 +1,5 @@
 ### 一、基本概念
+
 JWT(JSON Web Token)，是一种让JSON对象安全传输的开放标准，通常用作身份验证和授权。它有三部分组成：头部(Header)、载荷(Payload)和签名(Signature)，格式一般为：`xxxxxx.yyyyyy.zzzzzz`。
 * 头部说明了这是JWT和签名使用的算法
 * 载荷携带了如用户ID、过期时间等实际数据；
