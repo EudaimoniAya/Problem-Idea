@@ -4,17 +4,21 @@
     "type": "split",
     "children": [
       {
-        "id": "be3bb896732d82cd",
+        "id": "634daed922a4b7d5",
         "type": "tabs",
         "children": [
           {
-            "id": "2edd9b9241155ef9",
+            "id": "7d2cde768fb85c36",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "理论学习/安全相关/XSS和CSRF风险及规避.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "新标签页"
+              "title": "XSS和CSRF风险及规避"
             }
           }
         ],
@@ -91,6 +95,7 @@
             "state": {
               "type": "backlink",
               "state": {
+                "file": "理论学习/安全相关/XSS和CSRF风险及规避.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -100,7 +105,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "反向链接"
+              "title": "XSS和CSRF风险及规避 的反向链接列表"
             }
           },
           {
@@ -109,11 +114,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
+                "file": "理论学习/安全相关/XSS和CSRF风险及规避.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "出链"
+              "title": "XSS和CSRF风险及规避 的出链列表"
             }
           },
           {
@@ -151,12 +157,13 @@
             "state": {
               "type": "outline",
               "state": {
+                "file": "理论学习/安全相关/XSS和CSRF风险及规避.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "大纲"
+              "title": "XSS和CSRF风险及规避 的大纲"
             }
           }
         ]
@@ -178,11 +185,15 @@
       "workspaces:管理工作区布局": false
     }
   },
-  "active": "2edd9b9241155ef9",
+  "active": "7d2cde768fb85c36",
   "lastOpenFiles": [
-    "欢迎.md.lnk",
+    "理论学习/安全相关/JWT.md",
+    "项目问题/26-01-04 JWT鉴权学习过程.md",
     "项目问题/25-12-31 模块解耦思想的学习过程.md",
     "项目问题/26-01-03 协程在异步环境引起的代码逻辑错误.md",
+    "理论学习/安全相关/XSS和CSRF风险及规避.md",
+    "理论学习/安全相关",
+    "欢迎.md.lnk",
     "理论学习/python async异步编程.md",
     "欢迎.md",
     "理论学习",
