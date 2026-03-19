@@ -271,6 +271,8 @@ GitHub Actions的Runner在执行作业期间创建的所有内容都会在作业
 > 在`actions/upload-artifact`后面加上`@<commit-hash>`是指定了该Action的一个**具体版本**，但是这里的版本不是像`v4`这种语义化标签，而是40位的提交哈希。因为标签可变，维护者可以将其重新指向另一个提交，如`v4`可能会在`v4.2`更新后，从`v4.1`指向`v4.2`，当工作流依赖`v4`时可能结果就会随着更新变动。GitHub官方推荐**在生产工作流中使用完整的提交SHA来锁定Action版本，以确保稳定性和可重现性**。
 > 对于这个哈希码，可以先使用标签`v4`进行开发和测试，确认无误后，再将标签替换为固定的提交哈希，以保证长期稳定性。哈希值需要先找到对应的版本：
 > ![[Pasted image 20260315131110.png]]
+> 或：
+> ![[Pasted image 20260318222803.png]]
 > 然后点击作者右边的
 > ![[Pasted image 20260315131322.png]]
 > 跳转的页面中，地址栏部分就是对应的哈希码
@@ -589,6 +591,176 @@ task: Available tasks for this project:
 ![[Pasted image 20260318131811.png]]
 React前端微服务会在本机5173端口提供服务：
 ![[Pasted image 20260318131744.png]]
-* 
-* 
-* *
+至此，整个项目就已经启动了。
+#### 2.9.4 测试工作流
+##### 迭代1：编写测试工作流文件`test.yaml`
+```yaml
+# .github/workflows/test.yaml
+name: Run Tests
+
+on:
+  workflow_dispatch:  # 手动测试
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 1.Checkout Code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8     # v5.0.0
+        
+      - name: 2.Setup Node.js environment
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444   # v5.0.0
+        # TODO: use specified version + setup caching
+        
+      - name: 3.Install task
+        uses: supplypike/setup-bin@1fafb085795af4a3f183502f3a9dffa8f7b83217 # v5.0.0
+        with:
+          uri: "https://github.com/go-task/task/releases/download/v3.44.1/task_linux_arm64.tar.gz"
+          name: task
+          version: v3.44.1
+          
+      - name: 4.Install node deps
+        working-directory: services/node/api-node
+        run: |
+          task install-ci
+
+      - name: 5.Run tests
+        working-directory: services/node/api-node
+        run: |
+          task test
+```
+该文件定义了一个名为`Run Tests`的手动执行工作流，包含一个有五个步骤的`test`作业：
+* `1.Checkout Code`：使用`actions/checkout`Action，将仓库代码拉取到运行器的工作目录中
+* `2.Setup Node.js environment`：使用`actiond/setup-node`Action安装Node.js（TODO：后续需要指定具体版本并启用缓存）
+* `3.Install task`：使用第三方Action`supplypike/setup-bin`从指定URL下载并安装`task`命令行工具，并命名为`task`，使其在后续步骤中可以直接使用`task`命令
+  其中`supplypike/setup-bin`是一个**通用的二进制工具安装器，而非针对特定工具的专用action**。它的作用就是从指定的URL下载一个二进制压缩包（如`.tar.gz`、`.zip`），解压并将其中的可执行文件放入GitHub Actions运行环境的`PATH`中，以便后续步骤可以直接使用该命令。由于它不绑定任何特定工具，所以必须指定：下载什么`uri`、解压后叫什么`name`、什么版本`version`，所以称为**通用型Action，必须用`with`显式提供所有必要信息**
+* `4.Install node deps`：切换到工作目录`services/node/api-node`，然后运行`task install-ci`。这个`install-ci`任务是在Node微服务的`Taskfile.yaml`中定义的，通常用于在CI环境中安装依赖（例如执行`npm ci`或`npm install`）
+* `5.Run tests`：同样在 `services/node/api-node` 目录下，运行 `task test` 执行该服务的测试（测试命令由 Taskfile 定义： `npm run test`）
+目前该工作流只针对Node服务进行手动测试，后续可以扩展为矩阵测试，同时测试多个服务。
+
+##### 迭代2：使用`act`在本地触发工作流
+在`.github/workflows/`目录下对应`test.yaml`创建文件夹`test`并在里面创建`Taskfile.yaml`：
+```yaml
+# .github/workflows/test/Taskfile.yaml
+version: "3"
+
+env:
+  GITHUB_TOKEN:
+    sh: gh auth token
+
+# Notes:
+#  - The current config results in all service being "changed" since that is what PR #10 represents (as specified in event.json)
+#      PR #30 includes changes to all services
+#      PR #10 contains changes to go + go-migrator (if you want to test the filtering)
+#  - Uses catthehacker/ubuntu:act-22.04 because node:16-buster-slim doesnt contain git, and 24.04 image is still beta (and failed)
+
+tasks:
+  trigger-workflow:
+    desc: Trigger GitHub Actions pull_request event using act
+    cmds:
+      - |
+        act workflow_dispatch \
+          --container-architecture linux/amd64 \
+          -s GITHUB_TOKEN="{{.GITHUB_TOKEN}}" \
+          -e {{.PWD}}/event.json \
+          -P ubuntu-24.04=catthehacker/ubuntu:act-22.04 \
+          --directory ../../.. \
+          -W .github/workflows/test.yaml
+```
+这个是一个工程技巧：**在本地用`act`模拟GitHub Actions运行，以便快速测试工作流，而不用每次push到远程**。
+上小节创建的`test.yaml`工作流需要手动触发，**每次测试都得 push 到 GitHub 再点按钮，流程冗长且低效**。而且，如果你要测试 `pull_request` 事件（比如 PR 的自动测试），就**必须创建一个真实的 PR，等待 GitHub 运行，非常耗时**。
+**`act`是一个可以在本地运行`GitHub Actions`的工具，它能够读取工作流文件，并在本地容器中模拟GitHub运行器的行为**，这样就能很方便地验证逻辑、调试YAML、测试不同事件。
+上面的Taskfile定义了一个`trigger-workflow`任务，封装了`act`命令，用来在本地触发工作流，其中：
+* `act workflow_dispatch`：指定`act`触发一个`workflow_dispatch`事件
+* `-s GITHUB_TOKEN`：将GitHub token作为secret传递给工作流，用于模拟GitHub认证
+* `-e {{.PWD}}/event.json`：指定一个事件负载文件，模拟触发工作流时 GitHub 发送的 event payload
+* `-P ubuntu-24.04=...`：指定 `runs-on: ubuntu-24.04` 对应的本地容器镜像。因为 GitHub 的官方镜像可能不完整，所以用社区维护的替代品。这里做的是**平台映射**，当`act`之后遇到工作流中声明的`ubuntu-24.04`平台时，实际使用等号后的Docker镜像来创建容器
+* `--directory ../../..`：设置工作目录为项目根目录（因为当前 Taskfile 在 `.github/workflows/test/` 下，向上三级就是根目录）
+* `-W .github/workflows/test.yaml`：指定要运行的工作流文件
+**输出结果分析**：
+整段输出分为八部分，分别对应GitHub Actions运行工作流的步骤（输出中每个步骤开始用⭐开头，✅ 结尾，失败则打印细节）：
+* `Set up job`，是GitHub Actions运行工作流之前，**自动执行的一个隐式步骤**。它会在这一步里准备运行环境：
+  根据`runs-on`指定的版本（`ubuntu-24.04`），然后去Docker Hub拉取 `catthehacker/ubuntu:act-22.04`镜像（经过`-P`选项的平台映射），这对应了🚀开头的一行。
+![[Pasted image 20260319195456.png]]
+在之后进行一系列容器操作后，就会有一个“干净”的容器作为运行环境，而在Docker Desktop中也会出现一个**临时的容器**：
+![[Pasted image 20260319191640.png]]
+在完成整个任务之后，**容器会被自动销毁**：
+![[Pasted image 20260319191805.png]]
+* `Main 1.Checkout Code`：**直接将宿主机上的项目目录完整地复制到容器内的工作目录中**，避免因为路径变化导致脚本出错
+![[Pasted image 20260319192219.png]]
+* `Main 2.Setup Node.js environment`：对应准备Node环境步骤，但是从输出日志可以看出更多细节：
+  `act`会在第一次使用时，将用到的action代码（`actions/setup-node`）**从GitHub克隆到本地缓存目录**（`~/.cache/act/`），即执行`docker cp`命令。这里不是第一次使用，所以**直接将缓存的代码复制到正在运行的容器内指定路径**。之后`docker exec`这一步就是执行（`act`预缓存的）Node.js解释器来执行action脚本。然后这个脚本检测环境输出环境信息并注册问题匹配器（❓开头的行），最后输出完成步骤日志并设置了一个输出变量`node-version`，值为`v24.14.0`。后续步骤可以通过`${{ steps.<id>.outputs.node-version }}`引用
+![[Pasted image 20260319192546.png]]
+* `Main 3.Install task`：使用`setup-bin`下载`go-task`：
+  `docker cp`和`docker exec`类似，分别是将action代码复制到容器，和使用容器内缓存的Node.js解释器执行action入口脚本。该脚本读取`test.yaml`定义的`with`参数后执行下载任务。完成后输出日志，并打印信息`⚙  ::add-path:: `，表示已经将`task`的可执行文件所在目录加入系统的`PATH`变量中，这样后续步骤就可以直接使用`task`命令
+![[Pasted image 20260319194151.png]]
+* `Main 4.Install node deps`：在容器内执行`install-ci`，安装Node.js项目所需的依赖包，为后续测试做准备
+  `docker exec`在容器内**执行`act`动态生成的bash脚本**（位于`/var/run/act/workflow/3`），工作目录在Node服务的根目录下，该脚本中包含了工作流中定义的`run: task install-ci`命令，输出安装日志（`npm ci`自动运行了安全审计，并建议运行`npm audit fix`尝试自动修复）后完成步骤
+![[Pasted image 20260319200015.png]]
+* `Main 5.Run tests`：执行测试用例
+  `docker exec`继续在容器中执行一个临时脚本，脚本内容对应于工作流中定义的`run: task test`，之后用`jest`测试框架，执行`test/example/test.js`中的测试用例，并通过测试完成该步骤
+![[Pasted image 20260319202805.png]]
+* `Post 2.Setup Node.js environment`：`actions/setup-node`的`post`阶段（每个action可以定义`pre`、`main`、`post`三个阶段），执行脚本把本次安装的Node.js保存到GitHub Actions的缓存中。这样后续再运行时就可以直接从缓存恢复
+![[Pasted image 20260319202907.png]]
+* `Complete job`：同`Set up job`为隐式步骤，用于清除临时容器
+![[Pasted image 20260319202840.png]]
+至此工作完成，日志输出结束
+##### 迭代3：使用矩阵策略实现单作业支持多个服务测试 
+上一部分`test.yaml`文件只为Node服务提供了测试，现在需要添加对Go服务的测试，最简单的方法就是参照Node再写一个工作：
+```yaml
+  test-go:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 1.Checkout Code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8     # v5.0.0
+      - name: 2.Setup go environment
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5   # v5.5.0
+        with:
+          go-version-file: services/go/api-golang/go.mod
+          cache-dependency-path: services/go/api-golang/go.sum
+      - name: 3.Install task
+        uses: supplypike/setup-bin@8e3f88b4f143d9b5c3497f0fc12d45c83c123787 # v4.0.1
+        with:
+          uri: "https://github.com/go-task/task/releases/download/v3.44.1/task_linux_arm64.tar.gz"
+          name: task
+          version: v3.44.1
+      - name: 4.Install app deps
+        working-directory: services/go/api-golang
+        run: |
+          task install-ci
+      - name: 5.Run tests
+        working-directory: services/go/api-golang
+        run: |
+          task test
+```
+这样再执行`task trigger-workflow`两个工作就会并行执行：
+![[Pasted image 20260319211230.png]]
+但是这样对于多语言项目会很繁琐，所以可以考虑利用项目结构和GitHub Actions的**矩阵策略**对它进行优化：
+```yaml
+strategy:
+      fail-fast: false
+      matrix:
+        service: ["services/node/api-node", "services/go/api-golang"]
+```
+之后就可以通过`${{ matrix.service }}`获取不同的服务路径，这样可以让两个任务合并为一个，对于Node和go特殊的步骤（如准备环境）需用`if`确保一个任务Node和go的特殊步骤只执行一个：
+```yaml
+- name: 2.Setup Node.js environment
+  if: ${{ startsWith(matrix.service, 'services/node/') }}
+  uses: actions/setup-node@b39b52d1213e96004bfcb1c61a8a6fa8ab84f3e8   # v4.4.0
+  with:
+    node-version-file: services/node/api-node/package.json
+    cache: "npm"
+    cache-dependency-path: services/node/api-node/package-lock.json
+- name: 2.Setup go environment
+  uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5   # v5.5.0
+  if: ${{ startsWith(matrix.service, 'services/go/') }}
+  with:
+    go-version-file: services/go/api-golang/go.mod
+    cache-dependency-path: services/go/api-golang/go.sum
+```
+现在就得到了一个**能为两个服务运行测试的单矩阵作业**，另外可再向`matrix.service`中添加Python和React的路径，扩展为4个服务运行测试的作业，终端会并行输出四个工作的日志：
+![[Pasted image 20260319222338.png]]
+![[Pasted image 20260319222735.png]]
+唯一需要注意的一点是Python安装依赖需要poetry，所以要在`Install python`步骤前添加`Install poetry`，这两个执行的前提`if`为`service`对应python路径。
+##### 1) 要点
+因为项目是**单仓库**的（**所有微服务的代码存放于同一仓库中**），一次代码提交可能只改动其中一个服务。如果**每次运行CI都构建和测试所有服务，会造成资源浪费和时间延迟**。因此需要智能地确定哪些服务受到了变更影响，**只针对这些服务执行相应的流水线任务**。
