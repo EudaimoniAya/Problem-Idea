@@ -510,7 +510,7 @@ secure:
  - 结合GitOps实践，可以通过提交更新后的清单到仓库，触发集群的自动同步（例如使用ArgoCD），从而将应用部署到不同环境的Kubernetes集群中。
 ![[Pasted image 20260316181635.png]]
 #### 2.9.3 实操
-* 使用Devbox同步环境：在bash终端输入`devbox shell`，获得作用于本次窗口的环境`.devbox`和`.venv`。其背后的逻辑是：**Devbox构建了OS级的工具链**（见[[工具：Devbox]]），如`python312@latest`、`go-task@latest`等等，这些用于还原项目的元数据被保存在`.devbox`中（真正的工具存放在`nix/store`下），而对于Python这样的工具，**如果不使用虚拟环境将依赖管理妥当的话，依赖的影响则会扩散到项目外部**。所以**Devbox在提供Python解释器时，还自动地为每个项目创建了隔离的Python虚拟环境**，在`.devbox/virtenv/python312/`下，有名为`venvSheelHook.sh`的脚本文件，其中就在检查`venv`：
+* 使用Devbox同步环境：在bash终端输入`devbox shell`，获得作用于本次窗口的环境`.devbox`和`.venv`。其背后的逻辑是：**Devbox构建了OS级的工具链**（见[[工具：Devbox]]），如`python312@latest`、`go-task@latest`等等，这些用于还原项目的元数据被保存在`.devbox`中（真正的工具存放在`nix/store`下），而对于Python这样的工具，**如果不使用虚拟环境将依赖管理妥当的话，依赖的影响则会扩散到项目外部**。所以**Devbox在提供Python解释器时，还自动地为每个项目创建了隔离的Python虚拟环境**，在`.devbox/virtenv/python312/`下，有名为`venvShellHook.sh`的脚本文件，其中就在检查`venv`：
 ```bash
 # Check that Python version supports venv
 if ! python -c 'import venv' 1> /dev/null 2> /dev/null; then
@@ -573,7 +573,7 @@ task: Available tasks for this project:
 * run-postgres:               Start postgres container
 * run-psql-init-script:       Execute psql commands
 ```
-* 执行`run-postgres`命令，启动psql数据库。此时可能会出现Docker找不到的问题，这是因为Nix在构建隔离的开发环境时，**有时会把`/bin`或`/usr/bin`省略掉**。而执行`which docker`可以得到Docker位置在WSL的`usr/bin/docker`处（**此处并非WSL自带Docker**，而是一个自动安装的Docker客户端，**因为Windows下的Docker可能存在路径转换或权限问题，所以Docker在WSL中创建一个软链接脚本，实际指向Windows的`docker.exe`**），所以会显示找不到Docker，此时手动添加`export PATH="$PATH:/usr/bin"`（或在`devbox.json`的`init_hook`中添加，避免每次都手动添加）
+* 执行`run-postgres`命令，启动psql数据库。此时可能会出现Docker找不到的问题，这是因为Nix在构建隔离的开发环境时，**有时会未包含`/bin`或`/usr/bin`等系统路径**。而执行`which docker`可以得到Docker位置在WSL的`usr/bin/docker`处（**此处并非WSL自带Docker**，而是一个自动安装的Docker客户端，**因为Windows下的Docker可能存在路径转换或权限问题，所以Docker在WSL中创建一个软链接脚本，实际指向Windows的`docker.exe`**），所以会显示找不到Docker，此时手动添加`export PATH="$PATH:/usr/bin"`（或在`devbox.json`的`init_hook`中添加，避免每次都手动添加）
 ![[Pasted image 20260318060110.png]]
 ![[Pasted image 20260318060129.png]]
 * 在第二个终端窗口执行psql数据库初始化任务：`task run-psql-init-script`：
@@ -672,8 +672,8 @@ tasks:
 **`act`是一个可以在本地运行`GitHub Actions`的工具，它能够读取工作流文件，并在本地容器中模拟GitHub运行器的行为**，这样就能很方便地验证逻辑、调试YAML、测试不同事件。
 上面的Taskfile定义了一个`trigger-workflow`任务，封装了`act`命令，用来在本地触发工作流，其中：
 * `act workflow_dispatch`：指定`act`触发一个`workflow_dispatch`事件
-* `-s GITHUB_TOKEN`：将GitHub token作为secret传递给工作流，用于模拟GitHub认证
-* `-e {{.PWD}}/event.json`：指定一个事件负载文件，模拟触发工作流时 GitHub 发送的 event payload
+* `-s GITHUB_TOKEN`：将GitHub token作为secret传递给工作流，用于模拟GitHub认证。选项`-s`用于传递密钥，此前对于GitHub Actions，如果有配置密钥，则CI时会主动注入，但是在**本地模拟则需要用`-s`手动提供**
+* `-e {{.PWD}}/event.json`：指定一个事件负载文件，模拟触发工作流时 GitHub 发送的 event payload。选项`-e`用于传递环境变量，类似于密钥，变量在远程CI提交时会自动注入，但是在**本地模拟则需要用`-e`手动提供**
 * `-P ubuntu-24.04=...`：指定 `runs-on: ubuntu-24.04` 对应的本地容器镜像。因为 GitHub 的官方镜像可能不完整，所以用社区维护的替代品。这里做的是**平台映射**，当`act`之后遇到工作流中声明的`ubuntu-24.04`平台时，实际使用等号后的Docker镜像来创建容器
 * `--directory ../../..`：设置工作目录为项目根目录（因为当前 Taskfile 在 `.github/workflows/test/` 下，向上三级就是根目录）
 * `-W .github/workflows/test.yaml`：指定要运行的工作流文件
@@ -762,5 +762,476 @@ strategy:
 ![[Pasted image 20260319222338.png]]
 ![[Pasted image 20260319222735.png]]
 唯一需要注意的一点是Python安装依赖需要poetry，所以要在`Install python`步骤前添加`Install poetry`，这两个执行的前提`if`为`service`对应python路径。
-##### 1) 要点
+##### 迭代4：使用过滤器实现仅对变更服务执行测试
 因为项目是**单仓库**的（**所有微服务的代码存放于同一仓库中**），一次代码提交可能只改动其中一个服务。如果**每次运行CI都构建和测试所有服务，会造成资源浪费和时间延迟**。因此需要智能地确定哪些服务受到了变更影响，**只针对这些服务执行相应的流水线任务**。
+对此，[路径过滤器(`dorny/paths-filter`)](https://github.com/marketplace/actions/paths-changes-filter)会根据分支或拉取请求PR查看仓库，**查找到哪些文件变了之后，根据配置输出一组它应该运行的服务**。为了知道哪些文件发生了变化，它需要知道：
+* **基准提交（base）**：通常是目标分支（如`main`）的最新提交
+* **对比提交（head）**：当前分支（如PR的分支）的最新提交
+在GitHub触发的真实工作流中（如`pull_request` ），GitHub 会自动提供这两个提交。**但在本地用`act`模拟`workflow_dispatch`时，`act`不会自动知道这些信息，因此需要提供一个模拟的`event.json`**，这就是`.github/workflows/test/`下的`event.json`
+做的事情（这里代码会让`paths-filter`把当前HEAD与`main`分支比较，**因为`paths-filter`会执行一系列Git操作，其中就包括`git diff`**），在同目录下的Taskfile中：`-e {{.PWD}}/event.json \`也就是让`act`找到提供的模拟事件（payload）。
+```json
+{
+  "repository": {
+    "default_branch": "main"
+  }
+}
+```
+**过滤器需要指定各个服务的名称与对应的文件模式**，在`.github/utils/file-filters.yaml`文件中存在大量这种键定义：
+```yaml
+services/node/api-node:
+  - "services/node/api-node/**"
+  - ".github/actions/setup-dependencies/action.yaml"
+```
+它的意思是，如果这些路径下的任何文件发生了变化，那么`services/node/api-node`这个键就会被标记为`true`，结果最终就会包含在输出`outputs`的`changes`中，这在`dorny/paths-filter/action/yml`的源码中有定义：
+![[Pasted image 20260319231339.png]]
+根据`file-filters.yaml`文件**定义的键的管辖范围**，就可以在`test.yaml`中进行智能测试选择优化：
+```yaml
+jobs:
+  filter:
+    runs-on: ubuntu-24.04
+    outputs:
+	  # 依赖过滤器的任务，后续都可通过以下方法访问该JSON数组：
+	  # ${{ needs.filter.outputs.services }}
+      services: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@...
+      - name: Paths Changes Filter
+        id: filter
+        uses: dorny/paths-filter@...
+        with:
+		  # 它要GitHub API获取分支信息和比较变更，故要令牌
+		  # 可在Taskfile中使用sh: gh auth token获取
+		  # 并将其作为act命令的参数，以供这里调用
+	      # -s GITHUB_TOKEN="{{.GITHUB_TOKEN}}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # 这里需要过滤器的定义：有哪些键及其管辖范围是什么
+          filters: .github/utils/file-filters.yaml
+```
+`filter`会**输出一个JSON字符串`services`，里面包含了所有被标记为 `true` 的服务名称**（例如 `["services/go/api-golang"]`）。**后续的`run-tests`作业可以判断如果这个数组非空，才运行测试**。
+**一个简单小测试**：在go服务的目录下创建`filter_test.go`文件并添加和提交，执行`task trigger-workflow`，在输出日志中有：
+![[Pasted image 20260320001613.png]]
+最后`Changes output set to`后面的数组中既包含了go也包含了数据库迁移，可见过滤器检测到了文件的改变，而且该步骤结束后有如下输出：
+![[Pasted image 20260320001736.png]]
+其中可以看到`services/other/api-golang-migrator=true`、`services/go/api-golang=true`，而其他三个（python、react、node）均为`false`，因为`.github/utils/file-filters.yaml`文件中对go和数据库迁移的键定义为：
+```yaml
+services/go/api-golang: &api_golang
+  - "services/go/api-golang/**"
+  - "services/other/api-golang-migrator/**"
+    # db migrations tied to service 
+  - ".github/actions/setup-dependencies/action.yaml"
+
+services/other/api-golang-migrator:
+  - *api_golang # db migrations tied to service
+```
+通过设置这种锚点能够减少重复代码，锚点让两个键使用了相同的模式列表，而展开来数据库迁移的路径也是那三条。
+##### 迭代5：过滤器输出结果结合矩阵策略
+上一节在支持多个服务的单矩阵作业上，新增了过滤器模块，并且可以在运行过程中通过过滤器输出的JSON来判断是否执行测试，实现了单仓库场景下的智能测试工作流。**但是这样仍然会通过矩阵策略开启全部的微服务测试作业**，每个本不该执行的作业要经过：初始化运行器、拉取代码到运行器、准备环境（即使有缓存也消耗时间）、再到执行测试前的条件判断。所以可以利用`fromJson`函数**提前过滤器的结果作用于微服务测试的矩阵策略输入**：
+```yaml
+  test:
+    runs-on: ubuntu-24.04
+    # 如果没有影响服务的更改，那就不测试
+    if: ${{ needs.filter.outputs.services != '[]' && needs.filter.outputs.services != '' }}
+    needs: filter
+    strategy:
+      fail-fast: false
+      matrix:
+	    # 把列表改为如下表达式
+        service: ${{ fromJson(needs.filter.outputs.services) }}
+```
+![[Pasted image 20260320010201.png]]
+通过日志可以看出，过滤器检测出了两个服务有变更（go和数据库迁移）所以矩阵策略只并行执行了两个测试作业。
+##### 迭代6：细节调整【演示在构建/推送阶段完成】
+```yaml
+name: Run Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - services/**
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  filter:
+    runs-on: ubuntu-24.04
+    outputs:
+      services: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493 # v5.0.0
+      - name: Paths Changes Filter
+        id: filter
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          filters: .github/utils/file-filters.yaml
+
+  run-tests:
+    runs-on: ubuntu-24.04
+    if: ${{ needs.filter.outputs.services != '[]' && needs.filter.outputs.services != '' }}
+    needs: filter
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.filter.outputs.services) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493 # v5.0.0
+      - uses: ./.github/actions/setup-dependencies
+        with:
+          install_task: "true"
+          install_go: ${{ startsWith(matrix.service, 'services/go/') }}
+          install_node: ${{ startsWith(matrix.service, 'services/node/') || startsWith(matrix.service, 'react/') }}
+          install_python: ${{ startsWith(matrix.service, 'services/python/') }}
+          service_path: ${{ matrix.service }}
+      - name: Install / Build
+        working-directory: ${{ matrix.service }}
+        run: |
+          task install-ci
+      - name: run tests
+        working-directory: ${{ matrix.service }}
+        run: |
+          task test
+          
+  # 当所有作业成功它会被跳过，只要有失败它就会被执行
+  run-tests-failure-alert:
+    runs-on: ubuntu-latest
+    needs: [filter, run-tests]
+    if: ${{ cancelled() || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'failure') }}
+    steps:
+      - name: Conditionally Fail Required Check
+        shell: bash
+        run: |
+          echo "::error Some required job has failed!"
+          exit 1
+```
+这里第二步将多个服务环境的判断逻辑和执行语句简化（对应以前以`2`开头的步骤），将其动作执行统一管理为自带的一个action（存放在`.github/actions/setup-dependencies`，`uses`后面用的是相对路径，此时工作目录应该是`.github/workflows/`所以要加`./`）
+在`.github/actions/setup-dependencies`中，接收了`test.yaml`定义的`install_xxx`来判断测试是否执行：
+```yaml
+name: "Setup Dependencies"
+description: "Setup tools/dependencies"
+inputs:
+
+  # Task
+  install_task:
+    description: "install task if true"
+    default: "true"
+  task_version:
+    description: "version of task to install"
+    default: "v3.44.0"
+
+  # Language runtimes / toolchains
+  install_go:
+    description: "install go if true"
+    default: "false"
+  install_node:
+    description: "install node if true"
+    default: "false"
+  install_python:
+    description: "install python if true"
+    default: "false"
+  service_path:
+    description: "path to service within repo (used to find version file)"
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install go-task
+      if: ${{ inputs.install_task == 'true' }}
+      uses: supplypike/setup-bin@1fafb085795af4a3f183502f3a9dffa8f7b83217 # v5.0.0
+      with:
+        uri: "https://github.com/go-task/task/releases/download/${{ inputs.task_version }}/task_linux_amd64.tar.gz"
+        name: task
+        version: ${{ inputs.task_version }}
+
+    - name: Set up Go
+      if: ${{ inputs.install_go == 'true' }}
+      uses: actions/setup-go@1d76b952eb9246b03e20e15a9ef98c6d4af389ef # v5.5.0
+      with:
+        go-version-file: ./${{ inputs.service_path }}/go.mod
+        cache-dependency-path: "./${{ inputs.service_path }}/go.sum"
+
+    - name: Set up Node
+      if: ${{ inputs.install_node == 'true' }}
+      uses: actions/setup-node@d7a11313b581b306c961b506cfc8971208bb03f6 # v4.4.0
+      with:
+        node-version-file: ./${{ inputs.service_path }}/package.json
+        cache: npm
+        cache-dependency-path: ./${{ inputs.service_path }}/package-lock.json
+
+    
+    - name: Set up Poetry
+      if: ${{ inputs.install_python == 'true' }}
+      uses: snok/install-poetry@d526ede1e27960b7b181a5ac53044f552afdaa38 # v1.4.1
+
+    - name: Set up Python
+      if: ${{ inputs.install_python == 'true' }}
+      uses: actions/setup-python@3d1e2d2ca0a067f27da6fec484fce7f5256def85 # v5.6.0
+      with:
+        python-version-file: ./${{ inputs.service_path }}/pyproject.toml
+        cache: poetry
+        cache-dependency-path: ./${{ inputs.service_path }}/poetry.lock
+```
+#### 2.9.5 构建/推送工作流
+整个CI流水线的核心任务就是：**把代码变成可以交付的“产物”**，并确保产物的高质量。把代码打包成镜像并推送到镜像仓库，本质上是CI流水线在完成了代码检查、单元测试、集成测试等所有验证后，**把最终的、被验证过的“合格品”打包好，并贴上一个唯一的标签。放到一个集中的“仓库货架”（镜像仓库）上**。这个工作流的任务一般被认为是CI流程的最后一个环节，也是CD（持续部署）的起点。CD流水线的核心任务是：把已知的、合格的镜像，按照指定的策略，部署到目标环境（如测试环境、预发布环境、生产环境）中，并让它稳定运行起来。
+回到构建/推送工作流本身，它需要：
+* 构建Docker镜像（Docker笔记见[[工具：Docker]]和[[PostgreSQL和使用Docker完成pgvector扩展#三、构建和推送镜像]]）
+* 设置一个清晰、可追溯的版本标签
+* 将镜像推送到镜像仓库
+对于该工作流，先观察最终代码（`build-push.yaml`和同名文件夹下的`Taskfile.yaml`）了解这个工作流需要做什么，再从头开始。
+##### 目标：多架构镜像构建&推送镜像到镜像仓库
+构建镜像需要在终端执行`docker build`命令，使用当前目录下的Dockerfile文件来将项目打包（`WORKDIR`和`COPY`关键字配合）成镜像。所以这个步骤可以用Task封装：
+```yaml
+  build-container-image:
+    desc: Build container image
+    cmds:
+      - docker build -t {{.IMAGE_REPO}}{{.IMAGE_TAG}} .
+  
+  build-container-image-multi-arch:
+    desc: Build multi-arch container image
+    cmds:
+      - |
+        docker buildx build \
+        --platform linux/amd64,linux/arm64 \
+        -t {{.IMAGE_REPO}}:{{.IMAGE_TAG}} \
+        --push \
+        .
+```
+这里的两个`task`分别对应两种构建镜像的方式：
+* 上面的使用简易的`docker build`，且只用了选项`-t`指定镜像名称和版本号。**这样镜像只会构建到本地（运行器），容器结束后镜像就会丢失**。但是它可以快速地验证构建这个行为，而不用每次验证真的把镜像推到仓库，并且如果使用Docker缓存，那么即使工作结束时镜像被销毁，只要在job内被其他步骤使用就有效，因此**很适合本地开发调试**
+* 下面的使用了Docker Buildx的扩展命令`docker buildx build`，**用于构建多架构镜像**（如同时支持AMD64和ARM64），并且它可以**直接在构建完成后将镜像推送到仓库，而不需要在本地保存**（通过`--push`参数指定）。其中`{{.IMAGE_REPO}}`为镜像仓库地址，`{{.IMAGE_TAG}}`为镜像标签，通常是一个语义化版本号，如 `1.2.3` 或 `1.2.3-0042-gabcd123`
+每个微服务的根目录下都有一个Dockerfile文件：
+![[Pasted image 20260320144931.png]]
+而要封装这些微服务构建镜像的命令，每个微服务根目录下也有包含上面代码的Taskfile
+##### 目标：统一版本生成工具`utils/Taskfile.yaml`
+`utils`和`services`同目录，它内部的Taskfile包含了一系列微服务可重用的任务，被各个微服务的Taskfile通过`includes`引入。
+![[Pasted image 20260320173106.png]]
+在**生产环境下，版本号一般为简洁的形式，如`1.2.3`**，它表示一个“正式发布”的、稳定的、对外提供服务的版本。**而对于开发、测试、预发布这种非生产环境下**，使用版本号格式 `X.Y.Z-<commit num>-<hash>`（例如 `1.2.3-42-gabcd123`）是软件工程中一种**常见的最佳实践**，它通常由 Git 的 `git describe` 命令自动生成。
+![[Pasted image 20260320173549.png]]
+###### 基础版本号生成：`generate-version`
+```yaml
+generate-version:
+    desc: "Use git describe to generate a tag based on the latest release tag"
+    vars:
+      SERVICE_RELEASE_TAG: "{{.CLI_ARGS}}"
+    cmds:
+      - |
+        set -euo pipefail
+        TAG=$(git describe --tags --always --first-parent --match "{{.SERVICE_RELEASE_TAG}}@[0-9]*.[0-9]*.[0-9]*")
+        PREFIX="{{.SERVICE_RELEASE_TAG}}@"
+        echo "${TAG#${PREFIX}}"
+    silent: true
+```
+该task基于Git标签生成版本号，`git describe`一长串命令会找到最近一个匹配`服务名@X.Y.Z`模式的标签，并返回类似 `api-golang@1.2.3-42-gabcd123` 的字符串（其中 42 是标签后的提交数，`gabcd123` 是短哈希）。然后它去掉前缀 `服务名@`（使用Bash变量替换语法`${TAG#${PREFIX}}`，`#`表示**从头移除最短匹配的前缀**），得到 `1.2.3-42-gabcd123`。所以`task generate-version -- api-golang`，会输出 `1.2.3-42-gabcd123`
+###### 常规版本标签：`generate-version-tag`
+```yaml
+generate-version-tag:
+    desc: "Combine the image repo with the version tag"
+    vars:
+      SERVICE_RELEASE_TAG: "{{.CLI_ARGS}}"
+      VERSION:
+        sh: task -s generate-version -- {{.SERVICE_RELEASE_TAG}}
+    cmds:
+      - |
+        echo "{{.IMAGE_REPO}}:{{.VERSION}}"
+```
+它调用 `generate-version` 获取版本号，然后输出完整的镜像名称 `仓库:版本`。这样构建任务就可以直接使用这个标签。
+###### 扩展版本标签：`generate-extended-version` 和 `generate-extended-version-tag`
+![[Pasted image 20260320180702.png]]
+这两个任务的作用是确保版本号始终包含提交计数和哈希，这样即使直接从某个标签构建（此时`git describe`只返回`X.Y.Z`）。它们会检查返回的版本号中是否包含`-g<hash>`后缀。如果没有就手动添加`-0-g<hash>`，并将计数部分补零到4位。这保证了所有构建的镜像都有一个唯一可追溯的标签。
+##### 迭代1：基础的Docker Hub认证
+类似于测试工作流，在`.github/workflows/`下创建工作流文件`build-push.yaml`（项目有六个工作流，那么就有六个`.yaml`文件，而同目录的同名文件夹内的文件都是用于存放`act`本地模拟相关操作的，如Taskfile就封装了触发工作流的`act`操作，并根据工作流性质添加了相应的`event.json`）
+工作流文件`.github/workflows/build-push.yaml`：
+```yaml
+name: Build and Push Container Images
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-push-container-images:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Install task
+        uses: supplypike/setup-bin@8e3f88b4f143d9b5c3497f0fc12d45c83c123787 # v4.0.1
+        with:
+          uri: "https://github.com/go-task/task/releases/download/v3.44.1/task_linux_arm64.tar.gz"
+          name: task
+          version: v3.44.1
+      - name: Auth to DockerHub
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  # v3.5.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+```
+该任务分为三个步骤：① 拉取代码，其中因为后续步骤需要使用`git describe`基于Git标签生成版本号，所以需要参数`fetch-depth`为0，确保所有标签和完整历史都被下载，从而让`git describe`能够找到最近的标签；② 安装`task`；③ Docker Hub认证，这里引用了GitHub的密钥和环境变量。
+完成了初步的构建/推送工作流后，需要在`.github/workflows/build-push/`下的`Taskfile.yaml`文件封装`act`操作：
+```yaml
+version: '3'
+
+env:
+  GITHUB_TOKEN:
+    sh: gh auth token
+
+tasks:
+  trigger-workflow-workflow-dispatch:
+    desc: Trigger GitHub Actions workflow_dispatch event using act
+    cmds:
+      - |
+        act workflow_dispatch \
+          --container-architecture linux/amd64 \
+          -s GITHUB_TOKEN="{{.GITHUB_TOKEN}}" \
+          -e {{.PWD}}/workflow-dispatch-event.json \
+          -P ubuntu-24.04=catthehacker/ubuntu:act-22.04 \
+          --directory ../../.. \
+          -W .github/workflows/build-push.yaml
+```
+在`.github/workflows/build-push/`终端执行Task结果为：
+![[Pasted image 20260320223619.png]]
+可见工作流对于`DOCKERHUB_USERNAME`和 `DOCKERHUB_TOKEN`的引用失败，因为工作流是服务于GitHub Actions的，**这些环境变量和密钥保存在项目的设置中，在触发工作流时会被自动注入进去**。但是在本地使用`act`模拟时，这些值不会自动出现，所以必须在用`act`模拟触发工作流时，显式地通过选项`-s`传递密钥，通过选项`-e`传递环境变量，否则`docker/login-action`就会收到空值，出现红框中的内容：`❗  ::error::Username and password required`
+所以解决办法就是在Taskfile硬编码（但是不要提交，避免密钥泄露）。或者在终端设置环境变量并在Taskfile中引用（最好）：
+```bash
+export DOCKERHUB_USERNAME=your_username
+export DOCKERHUB_TOKEN=your_token
+```
+```yaml
+-s DOCKERHUB_USERNAME="{{.DOCKERHUB_USERNAME}}" \
+-s DOCKERHUB_TOKEN="{{.DOCKERHUB_TOKEN}}" \
+```
+但是有时并不需要真的需要构建镜像推送出去，所以可以使用一个条件判断`if`，实现本地运行时跳过Docker Hub凭证（`act`执行时会自动向容器注入一个环境变量`ACT=true`）：
+```yaml
+      - name: Auth to DockerHub
+        # 本地模拟时 env.ACT 为true，条件不满足
+        if: ${{ !env.ACT }}
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  # v3.5.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+```
+增加跳过判断后，再执行工作流就不会报错了：
+![[Pasted image 20260320225510.png]]
+
+> [!认识] act操作出现docker登录失败问题的原因
+> Docker在WSL上的客户端本质是指向Windows的Docker守护进程的，所以工作流执行拉取容器等操作在Docker Desktop上均能显示。`act`操作会创建一个干净的容器，这个容器会将宿主机的Unix套接字`/var/run/docker.sock`挂载到容器内，实现WSL的Docker守护进程和容器内的Docker客户端（`docker`命令）通信，而这个套接字通过Docker Desktop集成，让这个套接字直接映射到Windows的Docker守护进程。因此**无论是WSL的Docker客户端，还是`act`容器内部的Docker客户端，最终都是通过同一个套接字与Windows的Docker守护进程通信，它是三者共享的通信端点**：
+> ![[Pasted image 20260320233051.png]]
+> 
+> 在项目中，`act`操作执行时，时常会出现无法从Docker拉取镜像的错误。因为`act`会创建一个容器，在容器内部不断地向Docker Hub拉取依赖的镜像。**而Docker客户端拉取镜像时会先尝试用凭证进行认证（只要本地有，且无论下载的是否是公开镜像），一旦凭证失效（如令牌过期），即使镜像公开也会返回认证失败**。Docker使用**双令牌认证机制**，长期的个人访问令牌PAT保存在本地，客户端将用户请求转发给Docker守护进程，守护进程再与Docker Hub通信，这个通信使用的是短期的会话令牌（Session Token）。所以当凭证失效时，守护进程也会用过期的凭证与Docker Hub通信，最终导致失败。
+> 
+> 解决办法是执行`docker logout`，它会**强制清除守护进程存储的短期令牌**，再在Docker Desktop或WSL登录，`docker login`就是**将本地保存的长期令牌去生成新的短期会话令牌**。
+
+##### 迭代2：为单个服务构建多架构Docker镜像并推送
+QEMU是一个开源的模拟器/虚拟化软件，它可以让Docker在构建不同平台的镜像（如宿主机是x86_64架构，需要构建ARM64架构）时，能够模拟运行其他平台（如ARM64）的代码
+`Docker Buildx`是Docker官方的一个CLI插件，能够支持**多架构构建、并行构建、高级缓存、构建器管理**等功能，在该项目中`Buildx`能够使用高级构建功能来同时构建多个架构
+```yaml
+# 在`.github/workflows/build-push/yaml`末尾添加
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392   # v3.6.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+```
+能够构建镜像之后，可以考虑加入版本号来为镜像专业地命名，并推送镜像：
+```yaml
+# 在`.github/workflows/build-push/yaml`末尾添加
+      - name: Compute image tag
+        id: image-tag
+        run: |
+          version=foo
+          image_tag=foobar
+          echo "version=${version}" >> $GITHUB_OUTPUT
+          echo "image_tag=${image_tag}" >> $GITHUB_OUTPUT
+          # TODO: generate the actual version/tag
+      - name: build and push image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83  # v6.18.0
+        with:
+          context: services/node/api-node
+          push: ${{ !env.ACT }}
+          tags: ${{ steps.image-tag.outputs.image_tag}}
+          platforms: linux/amd64
+          # 表示使用GitHub Actions的缓存
+          cache-from: type=gha
+          # mode=max表示缓存所有构建层，最大化复用
+          cache-to: type=gha,mode=max
+```
+* `Compute image tag`的作用是生成镜像的版本号和完整标签（这里先硬编码了占位符）真实的版本号应该从Git标签或时间戳动态生成。最后该步骤将占位符赋给了两个输出：`version`和`image_tag`
+* `build and push image`使用了Docker官方的 `docker/build-push-action`，它封装了 `docker buildx build` 命令，简化了多架构构建、缓存和推送的流程
+现在就已经获取了一个能够构建镜像并推送至远程仓库的工作流：
+![[Pasted image 20260321013938.png]]
+但是它只能处理单个服务（即`context: services/node/api-node`），并且`version`和`image_tag`两个输出都是硬编码
+##### 迭代3：使用矩阵策略构建多个Docker镜像
+过滤器配合矩阵策略可以只让有变更的微服务构建镜像并推送，测试工作流中使用过的过滤器`filter`完全可重用：
+```yaml
+  filter:
+    runs-on: ubuntu-24.04
+    outputs:
+      services: ${{ steps.filter.outputs.changes }}   
+      # 源码中输出是一个JSON数组
+    steps:
+      - name: 1.Checkout Code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8     # v5.0.0
+      - name: filter
+        id: filter    # 需要一个可引用的输出
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          filters: .github/utils/file-filters.yaml
+```
+下游要添加矩阵策略需要更改三处：① 添加对上游作业`filter`的依赖；② 引入矩阵策略；③ `context`的值改为`${{ matrix.service }}`
+![[Pasted image 20260321015316.png]]
+通过引入过滤器+矩阵策略，实现智能检测变更并执行镜像构建（这里在go和node服务下分别新建了一个文件，所以go、node、数据库迁移的工作流都被触发了），但因为是本地测试所以不会推送：
+![[Pasted image 20260321021940.png]]
+##### 迭代4：实现依赖安装代码复用
+如前面（**测试工作流迭代6**）所做的一样，将所有的依赖安装如：
+```yaml
+    - name: Set up Poetry
+      if: ${{ inputs.install_python == 'true' }}
+      uses: snok/install-poetry@d526ede1e27960b7b181a5ac53044f552afdaa38 # v1.4.1
+```
+全都整合为本地的action，之后工作流就不用调用第三方的action（本质上还是调用第三方，只是不在工作流文件中调用），让文件格式变的简洁。并且可以这样通过`inputs`字段自定义参数，工作流调用时就用`with`字段来添加
+![[Pasted image 20260321024916.png]]
+##### 迭代5：为镜像动态生成版本和标签
+先跳过构建镜像，查看原先代码会输出怎样的结果，这个步骤执行完后会在控制台打印两行版本和标签信息：
+```yaml
+      - name: Compute image tag
+        id: image-tag
+        run: |
+          version=foo
+          image_tag=foobar
+          echo "version=${version}" >> %GITHUB_OUTPUT
+          echo "image_tag=${image_tag}" >> %GITHUB_OUTPUT
+          # TODO: generate the actual version/tag
+          echo "version=${version}"
+          echo "image_tag=${image_tag}"
+```
+可以正常地输出结果：
+![[Pasted image 20260321030123.png]]
+而关于标签的生成，这里使用之前介绍的`utils/Taskfile.yaml`中的不同标签生成任务完成工作流逻辑：对于生产环境的镜像只生成基础标签，对非生成环境则生成扩展标签。因此需要添加环境变量，指明它是生产环境还是非生产环境：
+```yaml
+      - name: Compute image tag
+        id: image-tag
+        working-directory: ${{ matrix.service }}
+        env:
+	      # 指明环境
+          ENVIRONMENT: production
+          # 服务名称，用于匹配Git标签
+          SERVICE: ${{ matrix.service }}
+        run: |
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            version=$(task utils:generate-version -- "$SERVICE" )
+            image_tag=$(task utils:generate-version-tag -- "$SERVICE" )
+          else
+            version=$(task utils:generate-extended-version -- "$SERVICE" )
+            image_tag=$(task utils:generate-extended-version-tag -- "$SERVICE" )
+          fi
+
+          echo "version=${version}" >> $GITHUB_OUTPUT
+          echo "image_tag=${image_tag}" >> $GITHUB_OUTPUT
+
+          # TODO: generate the actual version/tag
+          echo "version=${version}"
+          echo "image_tag=${image_tag}"
+```
