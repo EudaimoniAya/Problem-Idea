@@ -148,8 +148,8 @@ result = func()
 asyncio.run(result)
 ```
 ## 3. `await`
-`await`后面要跟可等待对象：`Awaitable`，如协程函数返回的协程对象就是一个可等待对象。`Awaitable`主要有三种：协程`Ciroutine`、任务`Task`和`Future`。
-协程就是协程函数返回的协程对象；任务`Task`是通过`asyncio.create_task()`等函数将协程包装成的任务，也是可等待的；`Future`是一种底层级的可等待对象，通常无需直接创建。
+`await`后面要跟可等待对象：`Awaitable`，如协程函数返回的协程对象就是一个可等待对象。`Awaitable`主要有三种：协程`Coroutine`、任务`Task`和`Future`。
+协程就是协程函数返回的协程对象；任务`Task`是通过`asyncio.create_task()`等函数**将协程包装成的任务**（要包装成Task的原因：**协程只是又该可挂起的函数对象，本身不能被事件循环直接调度执行，只有被包装成Task才能真正被事件循环“并发”执行**），也是可等待的；`Future`是一种**底层级的**可等待对象，通常无需直接创建。
 ```python
 import asyncio  
 
@@ -186,7 +186,7 @@ Tasks are used to schedule coroutines concurrently.
 
 When a coroutine is wrapped into a Task with functions like asyncio.create_task() the coroutine is automatically scheduled to run soon.
 ```
-总之它就是能够在事件循环中，添加多个任务。通过`asyncio.create_task(Coroutine)`的方式创建`Task`对象。这样可以让协程加入事件循环中等待被调度执行。除了使用`asyncio.create_task()`函数外，还可以用底层级`loop.create_task()`或`ensure_future()`函数。另外不建议手动实例化`Task`对象。
+总之它就是能够在事件循环中，添加多个任务。通过`asyncio.create_task(Coroutine)`的方式创建`Task`对象。这样可以让协程加入事件循环中等待被调度执行。除了使用`asyncio.create_task()`函数外，还可以用底层级`loop.create_task()`或`ensure_future()`函数。另外**不建议手动实例化`Task`对象**。
 示例1（不太常用）：
 ```python
 import asyncio  
@@ -257,7 +257,7 @@ main结束
 """
 ```
 其中可以看到`done`是一个有两个元素的集合（因为`task_list`定义了两个任务），里面有一个`Task finished name`字段，两个元素的值分别为`Task-2`和`n1`，而`Task-1`就是`asyncio.run(main())`这个主协程。
-示例3，在事件循环创建前调用`create_task()`：
+示例3，在事件循环创建前调用`create_task()`：【错误，所以任务应该只能在协程内部（即事件循环已运行时）构造】
 ```python
 import asyncio  
   

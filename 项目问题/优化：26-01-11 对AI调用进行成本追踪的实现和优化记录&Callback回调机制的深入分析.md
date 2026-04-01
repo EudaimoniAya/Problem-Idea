@@ -363,7 +363,7 @@ class BaseMessage(Serializable):
 }
 ```
 以上结果进行了三次工具调用，可以发现：
-* `ToolMessage`虽然将结果加入下一轮调用的上下文中，**但并不提供token信息**，因为最终`AIMessage`会统计包含了工具返回结果的总token消耗。**所以成本追踪只需参考`AIMessage`中的信息**。另外源码中对`response_metadata`字段的解释为（**仅继承，但不用**）：
+* `ToolMessage`虽然将结果加入下一轮调用的上下文中，**但并不提供token信息**，因为最终`AIMessage`会统计包含了工具返回结果的总token消耗。**所以成本追踪只需参考`AIMessage`中的信息**。另外`ToolMessage`的源码中对`response_metadata`字段的解释为（**仅继承，但不用**）：
 ```python
 class ToolMessage(BaseMessage, ToolOutputMixin):
 	additional_kwargs: dict = Field(default_factory=dict, repr=False)  
